@@ -324,9 +324,13 @@ test("resolving for download returns the file, and 410s when the bytes are gone"
   const asset = await readyAsset(depotId, actorId);
 
   const resolved = await service.resolveMediaForDownload(asset.id);
-  assert.ok(resolved.absolutePath.endsWith(".jpg"));
+  assert.ok(
+    resolved.download.kind === "file",
+    "the suite runs with no bucket configured, so the disk backend answers",
+  );
+  assert.ok(resolved.download.absolutePath.endsWith(".jpg"));
 
-  await fs.rm(resolved.absolutePath);
+  await fs.rm(resolved.download.absolutePath);
 
   await assert.rejects(
     () => service.resolveMediaForDownload(asset.id),

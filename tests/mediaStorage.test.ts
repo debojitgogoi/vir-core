@@ -70,6 +70,14 @@ test("resolvePath accepts a key that stays inside the root", () => {
   assert.ok(resolved.endsWith(path.join("media", "ab", "abcd.jpg")));
 });
 
+test("resolveDownload hands back a path on disk when no bucket is configured", async () => {
+  const stored = await storage.put(JPEG, "image/jpeg");
+  const target = await storage.resolveDownload(stored.storageKey, { ttlSeconds: 900 });
+
+  assert.ok(target.kind === "file", "no bucket is set in this process, so disk answers");
+  assert.deepEqual(await fs.readFile(target.absolutePath), JPEG);
+});
+
 test("exists reports false for a key that was never written", async () => {
   assert.equal(await storage.exists("media/ab/deadbeef.jpg"), false);
 });

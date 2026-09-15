@@ -1,4 +1,5 @@
 import * as repo from "../db/media.repo";
+import { env } from "../config/env";
 import { AppError, ERROR_CODES } from "../middleware/errors";
 import { AttachMediaInput, RegisterMediaInput } from "../schemas/media.schemas";
 import * as storage from "../storage/mediaStorage";
@@ -215,12 +216,16 @@ export async function listWithUrlsForJobCard(
  */
 export async function resolveMediaForDownload(
   mediaId: string,
-): Promise<{ row: repo.MediaAssetRow; absolutePath: string }> {
+): Promise<{ row: repo.MediaAssetRow; download: storage.DownloadTarget }> {
   const row = await loadAsset(mediaId);
 
   if (row.status !== "READY" || !(await storage.exists(row.storage_key))) {
     throw new AppError(410, "The file for this media is no longer available");
   }
 
-  return { row, absolutePath: storage.resolvePath(row.storage_key) };
+  const download = await storage.resolveDownload(row.storage_key, {
+    ttlSeconds: env.mediaUrlTtlSeconds,
+  });
+
+  return { row, download };
 }

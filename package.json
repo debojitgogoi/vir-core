@@ -14,7 +14,6 @@
     "verify:legacy-migration": "ts-node scripts/verify-legacy-migration.ts",
     "seed": "ts-node scripts/seed.ts",
     "regenerate:slug-ids": "ts-node scripts/regenerate-slug-ids.ts",
-    "backfill:depots": "ts-node scripts/backfill-depots.ts",
     "reap:media": "ts-node scripts/reap-media.ts",
     "lint": "eslint src scripts --ext .ts",
     "lint:fix": "eslint src scripts --ext .ts --fix",
@@ -28,6 +27,8 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1132.0",
+    "@aws-sdk/s3-request-presigner": "^3.1132.0",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",

@@ -76,11 +76,39 @@ export function resolveSignatureKeyVersion(
   return version;
 }
 
-const signatureKeys = resolveSignatureKeys(
-  process.env,
-  jwtSecret,
-  (process.env.NODE_ENV ?? "development") === "production",
-);
+/**
+ * Which bucket holds asset bytes — GLB models and media photographs. Unset
+ * means the local-disk backend, which is how development and the test suite
+ * run without an AWS account.
+ *
+ * Production refuses to boot unset. Disk is ephemeral there, so a missing
+ * variable would quietly revert every model and photograph to files the next
+ * deploy deletes, and nothing would surface until they were already gone.
+ *
+ * ASSETS_S3_BUCKET is the current name; GLB_S3_BUCKET is honoured because the
+ * deployment docs documented it first. Accepting both while the rename lands
+ * is the same additive approach mediaUrlSecret takes for its signing key.
+ */
+export function resolveAssetsBucket(
+  source: NodeJS.ProcessEnv,
+  isProduction: boolean,
+): string | null {
+  const bucket = source.ASSETS_S3_BUCKET || source.GLB_S3_BUCKET;
+  if (bucket) return bucket;
+
+  if (isProduction) {
+    throw new Error(
+      "Missing required environment variable: ASSETS_S3_BUCKET. " +
+        "Production keeps GLB models and photographs in S3; the Beanstalk " +
+        "disk is ephemeral and every deploy would delete them.",
+    );
+  }
+  return null;
+}
+
+const isProduction = (process.env.NODE_ENV ?? "development") === "production";
+
+const signatureKeys = resolveSignatureKeys(process.env, jwtSecret, isProduction);
 
 export const env = {
   port: Number(process.env.PORT ?? 3000),
@@ -89,8 +117,15 @@ export const env = {
   jwtSecret,
 
   // GLB asset storage. storageRoot is resolved against the process cwd when
-  // relative, so `./storage` means the project directory in dev.
+  // relative, so `./storage` means the project directory in dev. It is used
+  // only when assetsS3Bucket is null; in production the bytes live in S3.
   storageRoot: process.env.STORAGE_ROOT ?? "./storage",
+  // Which bucket asset bytes live in, or null for the local-disk backend.
+  assetsS3Bucket: resolveAssetsBucket(process.env, isProduction),
+  // Region for the asset bucket. Null hands resolution back to the SDK, which
+  // reads AWS_REGION and then the instance metadata service.
+  assetsS3Region:
+    process.env.ASSETS_S3_REGION ?? process.env.GLB_S3_REGION ?? null,
   glbMaxBytes: Number(process.env.GLB_MAX_BYTES ?? 100 * 1024 * 1024),
   glbUrlTtlSeconds: Number(process.env.GLB_URL_TTL_SECONDS ?? 900),
   // Signing key for download URLs. Separate from JWT_SECRET so asset URLs can

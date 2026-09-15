@@ -1,4 +1,5 @@
 import { AppError } from "../middleware/errors";
+import { env } from "../config/env";
 import {
   EquipmentTypeModelDetailsDto,
   EquipmentTypeModelSummaryDto,
@@ -139,15 +140,15 @@ export async function getModelDetailsDto(
 }
 
 /**
- * Resolve a verified download token to the file it points at.
+ * Resolve a verified download token to where the bytes can be read from.
  *
- * @throws AppError 410 when the row survives but its file is gone from disk —
- * a distinct condition from an invalid token, and worth telling the caller
+ * @throws AppError 410 when the row survives but its file is gone from storage
+ * — a distinct condition from an invalid token, and worth telling the caller
  * apart from a 404.
  */
 export async function resolveGlbForDownload(
   modelId: string,
-): Promise<{ row: EquipmentTypeModelRow; absolutePath: string }> {
+): Promise<{ row: EquipmentTypeModelRow; download: glbStorage.DownloadTarget }> {
   const row = await modelsRepo.getModelById(modelId);
   if (!row) throw new AppError(404, "Model not found");
 
@@ -155,7 +156,12 @@ export async function resolveGlbForDownload(
     throw new AppError(410, "The GLB file for this model is no longer available");
   }
 
-  return { row, absolutePath: glbStorage.resolvePath(row.storage_key) };
+  const download = await glbStorage.resolveDownload(row.storage_key, {
+    ttlSeconds: env.glbUrlTtlSeconds,
+    filename: row.original_filename,
+  });
+
+  return { row, download };
 }
 
 function toSummaryDto(row: EquipmentTypeModelRow): EquipmentTypeModelSummaryDto {
