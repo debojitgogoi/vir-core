@@ -1,0 +1,62 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# Secrets: .env carries JWT_SECRET, SIGNATURE_SECRET, the Postgres password
+# and the seed superuser password. .env.example is the tracked template.
+.env
+.env.*
+!.env.example
+
+# Runtime uploads (STORAGE_ROOT, default ./storage). Operator data written by
+# the running server, not source — and multi-megabyte GLBs besides.
+storage/
+
+# Deploy bundles built by the Beanstalk packaging step
+*.zip
+
+# Legacy migration inputs: a copy of the old production database plus its
+# spreadsheet/JSON exports. Customer data. The migration write-ups are worth
+# keeping, so they are re-included below.
+legacy_data/**
+!legacy_data/*.md
+
+# Generated catalogue exports and model binaries
+exports/
+
+# Test and coverage output
+coverage/
+*.log
+npm-debug.log*
+
+# macOS and editor cruft
+.DS_Store
+.idea/
+*.swp
+
+# AI assistant config, rules, transcripts and caches. Local tooling state,
+# not part of the service.
+.cursor/
+.cursorrules
+.cursorignore
+.cursorindexingignore
+.claude/
+CLAUDE.md
+AGENTS.md
+.aider*
+.continue/
+.codeium/
+.windsurf/
+.windsurfrules
+.cline/
+.clinerules
+.roo/
+.gemini/
+.github/copilot-instructions.md
+.mcp.json
+.specstory/
+.ai/
+llm.txt
