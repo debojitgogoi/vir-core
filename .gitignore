@@ -12,23 +12,26 @@ dist/
 !.env.example
 
 # Runtime uploads (STORAGE_ROOT, default ./storage). Operator data written by
-# the running server, not source — and multi-megabyte GLBs besides.
-storage/
+# the running server, not source — and multi-megabyte GLBs besides. Anchored to
+# the repo root: an unanchored `storage/` also matches src/storage, which would
+# silently keep the storage modules out of version control.
+/storage/
 
 # Deploy bundles built by the Beanstalk packaging step
 *.zip
 
 # Legacy migration inputs: a copy of the old production database plus its
 # spreadsheet/JSON exports. Customer data. The migration write-ups are worth
-# keeping, so they are re-included below.
-legacy_data/**
-!legacy_data/*.md
+# keeping, so they are re-included below. Root-anchored for the same reason as
+# storage/ above: a nested directory of this name is source, not operator data.
+/legacy_data/**
+!/legacy_data/*.md
 
 # Generated catalogue exports and model binaries
-exports/
+/exports/
 
 # Test and coverage output
-coverage/
+/coverage/
 *.log
 npm-debug.log*
 
