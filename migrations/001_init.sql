@@ -1,0 +1,2 @@
+-- Initial migration placeholder.
+-- Product tables will be added here once the schema is defined.
