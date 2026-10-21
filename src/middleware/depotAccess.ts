@@ -127,3 +127,35 @@ export async function requireUnlockedJobCard(
   req.jobCardAccess = card;
   next();
 }
+
+/**
+ * Same lock as requireUnlockedJobCard, except ADMIN / SUPERADMIN / legacy
+ * SUPERUSER may PATCH inspection lines after submit. Field roles stay 409.
+ * Must run after requireDepotAccess.
+ */
+export async function requireUnlockedJobCardOrAdminItemWrite(
+  req: Request,
+  _res: Response,
+  next: NextFunction,
+): Promise<void> {
+  const card =
+    req.jobCardAccess ??
+    (await findJobCardAccessRow(assertUuid(req.params.jobCardId, "jobCardId")));
+
+  if (!card) throw new AppError(404, "Job card not found");
+  if (card.locked_at && !canWriteLockedItem(req.user?.role)) {
+    throw new AppError(
+      409,
+      "This job card has been submitted and is read-only",
+      undefined,
+      ERROR_CODES.JOB_CARD_LOCKED,
+    );
+  }
+
+  req.jobCardAccess = card;
+  next();
+}
+
+function canWriteLockedItem(role: string | undefined): boolean {
+  return role === "ADMIN" || role === "SUPERUSER" || role === "SUPERADMIN";
+}

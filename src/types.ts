@@ -369,9 +369,11 @@ export type SignatureVerification =
  * Damage and repair codes are id lists rather than embedded objects: the
  * client already holds the code tables from `GET /equipment-types/:id`, and
  * embedding them would repeat the same descriptions on every item of every
- * card. `custom_fields` is the stored snapshot taken at write time, not the
- * live field definitions — a field renamed since does not rewrite what this
- * card recorded.
+ * card. Locating names (`main_view_name`, `subview_name`, `component_code`,
+ * `component_description`) are joined at read time so admin surfaces do not
+ * have to load the equipment tree. `custom_fields` is the stored snapshot
+ * taken at write time, not the live field definitions — a field renamed since
+ * does not rewrite what this card recorded.
  */
 export interface InspectionItemCustomField {
   subview_field_id: string;
@@ -386,8 +388,12 @@ export interface InspectionItemDto {
   id: string;
   job_card_id: string;
   main_view_id: string | null;
+  main_view_name: string | null;
   subview_id: string | null;
+  subview_name: string | null;
   component_id: string | null;
+  component_code: string | null;
+  component_description: string | null;
   condition_rating: string | null;
   notes: string | null;
   custom_fields: InspectionItemCustomField[];
@@ -415,3 +421,20 @@ export interface JobCardEventDto {
   note: string | null;
   created_at: string;
 }
+
+/**
+ * One photograph on a card: a line-item shot (`item_id` set) or an intake
+ * chassis / license shot (`item_id` null). Catalog names are joined for line
+ * photos so a gallery can label them without a second catalogue load.
+ */
+export type JobCardPhotographDto = MediaAssetDto & {
+  url: string;
+  expires_at: string;
+  /** Absolute presigned S3 GET when bytes live in S3; omitted on local disk. */
+  download_url?: string;
+  item_id: string | null;
+  main_view_name: string | null;
+  subview_name: string | null;
+  component_code: string | null;
+  component_description: string | null;
+};

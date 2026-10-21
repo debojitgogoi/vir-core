@@ -31,7 +31,8 @@ const { env, resolveAssetsBucket } =
 
 const GLB = Buffer.from("fake-glb-bytes");
 const JPEG = Buffer.from("fake-jpeg-bytes");
-const BUCKET_ORIGIN = "https://vir-assets-test.s3.ap-southeast-2.amazonaws.com";
+const BUCKET_ORIGIN =
+  "https://vir-assets-test.s3.dualstack.ap-southeast-2.amazonaws.com";
 
 test("the process is actually wired to S3, not the disk fallback", () => {
   assert.equal(s3.isS3Enabled(), true);

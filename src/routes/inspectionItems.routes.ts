@@ -1,6 +1,10 @@
 import { Request, Response, Router } from "express";
 import { requireAuth } from "../middleware/auth";
-import { requireDepotAccess, requireUnlockedJobCard } from "../middleware/depotAccess";
+import {
+  requireDepotAccess,
+  requireUnlockedJobCard,
+  requireUnlockedJobCardOrAdminItemWrite,
+} from "../middleware/depotAccess";
 import { AppError } from "../middleware/errors";
 import {
   attachItemMediaSchema,
@@ -38,9 +42,11 @@ function actorId(req: Request): string {
  *       photographs, and folding them in would make every card read pay for
  *       the largest case. `damage_code_ids` and `repair_code_ids` are id lists
  *       rather than embedded objects — the client already holds the code
- *       tables from `GET /equipment-types/{id}`. `custom_fields` is the
- *       snapshot taken when the answer was written, so a field renamed since
- *       does not rewrite what this card recorded.
+ *       tables from `GET /equipment-types/{id}`. Each item also carries
+ *       `main_view_name`, `subview_name`, `component_code` and
+ *       `component_description` from the catalog (null when that id is unset).
+ *       `custom_fields` is the snapshot taken when the answer was written, so
+ *       a field renamed since does not rewrite what this card recorded.
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - in: path
@@ -169,6 +175,8 @@ inspectionItemsRouter.get(
  *       array clears it. `custom_fields` is re-validated against whichever
  *       subview the item ends up on, so moving an item and re-answering it in
  *       one request cannot store answers belonging to the subview it left.
+ *       After submit the card stays locked for field roles; ADMIN, SUPERADMIN
+ *       and SUPERUSER may still correct notes, condition and codes.
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - in: path
@@ -193,7 +201,7 @@ inspectionItemsRouter.get(
  */
 inspectionItemsRouter.patch(
   "/job-cards/:jobCardId/items/:itemId",
-  requireUnlockedJobCard,
+  requireUnlockedJobCardOrAdminItemWrite,
   async (req: Request<{ jobCardId: string; itemId: string }>, res: Response) => {
     const jobCardId = assertUuid(req.params.jobCardId, "jobCardId");
     const itemId = assertUuid(req.params.itemId, "itemId");

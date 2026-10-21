@@ -1,6 +1,10 @@
+import { env } from "../config/env";
 import * as repo from "../db/jobCards.repo";
 import { getEquipmentPrefix, getEquipmentType } from "../db/equipment.repo";
+import * as itemsRepo from "../db/inspectionItems.repo";
+import * as mediaRepo from "../db/media.repo";
 import { AppError, ERROR_CODES } from "../middleware/errors";
+import * as mediaStorage from "../storage/mediaStorage";
 import { CreateJobCardInput, PatchJobCardInput } from "../schemas/jobCard.schemas";
 import {
   EquipmentForm,
@@ -8,10 +12,13 @@ import {
   GensetStatus,
   JobCardDirection,
   JobCardDto,
+  JobCardPhotographDto,
   JobCardStatus,
   Paginated,
   RegistrationStatus,
 } from "../types";
+import * as mediaService from "./media.service";
+import { signMediaToken } from "../utils/assetToken";
 import { generateJobNumber } from "../utils/jobNumber";
 import { paginate } from "../utils/pagination";
 
@@ -294,4 +301,73 @@ export async function updateJobCardById(
     }
     throw err;
   }
+}
+
+async function photographDownloadUrl(storageKey: string): Promise<string | undefined> {
+  const download = await mediaStorage.resolveDownload(storageKey, {
+    ttlSeconds: env.mediaUrlTtlSeconds,
+  });
+  return download.kind === "url" ? download.url : undefined;
+}
+
+function withDownloadUrl<T extends JobCardPhotographDto>(
+  photo: T,
+  downloadUrl: string | undefined,
+): T {
+  return downloadUrl ? { ...photo, download_url: downloadUrl } : photo;
+}
+
+/**
+ * Every photograph on the card: line-item shots in item-list order, then
+ * intake chassis / license attachments. `url` is the relative token path for
+ * <img>; `download_url` is a presigned S3 GET when bytes live in S3.
+ */
+export async function listPhotographsForJobCard(
+  jobCardId: string,
+  actorId: string,
+): Promise<JobCardPhotographDto[]> {
+  const itemRows = await itemsRepo.listInspectionItemMediaForJobCard(jobCardId);
+  const intakeRows = await mediaRepo.listJobCardMedia(jobCardId);
+
+  const itemPhotos = await Promise.all(
+    itemRows.map(async (row) => {
+      const signed = signMediaToken(row.id, actorId);
+      const downloadUrl = await photographDownloadUrl(row.storage_key);
+      return withDownloadUrl(
+        {
+          ...mediaService.toMediaAssetDto(row as unknown as mediaRepo.MediaAssetRow),
+          url: `/assets/media/${signed.token}`,
+          expires_at: signed.expiresAt,
+          item_id: row.item_id,
+          main_view_name: row.main_view_name,
+          subview_name: row.subview_name,
+          component_code: row.component_code,
+          component_description: row.component_description,
+        },
+        downloadUrl,
+      );
+    }),
+  );
+
+  const intakePhotos = await Promise.all(
+    intakeRows.map(async (row) => {
+      const signed = signMediaToken(row.id, actorId);
+      const downloadUrl = await photographDownloadUrl(row.storage_key);
+      return withDownloadUrl(
+        {
+          ...mediaService.toMediaAssetDto(row, row.kind),
+          url: `/assets/media/${signed.token}`,
+          expires_at: signed.expiresAt,
+          item_id: null,
+          main_view_name: null,
+          subview_name: null,
+          component_code: null,
+          component_description: null,
+        },
+        downloadUrl,
+      );
+    }),
+  );
+
+  return [...itemPhotos, ...intakePhotos];
 }

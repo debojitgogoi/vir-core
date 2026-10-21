@@ -11,6 +11,7 @@ import {
   seedDepot,
   seedEquipmentType,
   seedJobCard,
+  seedRepairCode,
 } from "./helpers/fixtures";
 import { Role } from "../src/types";
 
@@ -175,6 +176,46 @@ test("a locked card refuses writes but still serves its findings", async () => {
   const read = await list(jobCardId, auth);
   assert.equal(read.status, 200, "a submitted card's findings stay readable");
   assert.equal(read.body.length, 1);
+});
+
+test("ADMIN may PATCH notes, condition and codes on a locked card; MECHANIC may not", async () => {
+  const { depotId, jobCardId } = await scenario();
+  const { auth: mechanic } = await memberAt(depotId, "MECHANIC");
+  const created = await create(jobCardId, mechanic, { notes: "dent" });
+  const damageId = await seedDamageCode();
+  const repairId = await seedRepairCode();
+  await pool.query("UPDATE job_cards SET locked_at = now(), status = 'SUBMITTED' WHERE id = $1", [
+    jobCardId,
+  ]);
+
+  const mechanicPatch = await request(app)
+    .patch(`/job-cards/${jobCardId}/items/${created.body.id}`)
+    .set("Authorization", mechanic)
+    .send({ notes: "late" });
+  assert.equal(mechanicPatch.status, 409);
+  assert.equal(mechanicPatch.body.code, "JOB_CARD_LOCKED");
+
+  const admin = await createTestUser({ role: "ADMIN" });
+  const adminPatch = await request(app)
+    .patch(`/job-cards/${jobCardId}/items/${created.body.id}`)
+    .set("Authorization", bearerFor(admin.id, admin.role))
+    .send({
+      notes: "corrected dent",
+      condition_rating: "WEAR",
+      damage_code_ids: [damageId],
+      repair_code_ids: [repairId],
+    });
+  assert.equal(adminPatch.status, 200);
+  assert.equal(adminPatch.body.notes, "corrected dent");
+  assert.equal(adminPatch.body.condition_rating, "WEAR");
+  assert.deepEqual(adminPatch.body.damage_code_ids, [damageId]);
+  assert.deepEqual(adminPatch.body.repair_code_ids, [repairId]);
+
+  const { rows } = await pool.query<{ status: string }>(
+    "SELECT status FROM job_cards WHERE id = $1",
+    [jobCardId],
+  );
+  assert.equal(rows[0].status, "SUBMITTED");
 });
 
 test("a disabled depot refuses writes and still serves reads", async () => {

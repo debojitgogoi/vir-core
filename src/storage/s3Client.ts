@@ -45,6 +45,12 @@ function s3(): S3Client {
       // Undefined hands region resolution back to the SDK, which reads
       // AWS_REGION and then the instance metadata service.
       region: env.assetsS3Region ?? undefined,
+      // Dual-stack, because the default endpoint has no AAAA record and the
+      // presigned URL it produces is therefore unreachable from an IPv6-only
+      // client — which blackholes the connect rather than failing fast, so it
+      // surfaces as a timeout rather than a DNS error. Dual-stack endpoints
+      // serve IPv4 clients too, so this only ever adds reachability.
+      useDualstackEndpoint: true,
     });
   }
   return client;

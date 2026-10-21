@@ -201,6 +201,37 @@ jobCardsRouter.get(
 
 /**
  * @openapi
+ * /job-cards/{jobCardId}/photographs:
+ *   get:
+ *     tags: [Job Cards]
+ *     summary: Every photograph on the card
+ *     description: >
+ *       Line-item photographs first, in inspection-item list order, then
+ *       intake chassis / license shots. `url` is the relative token path for
+ *       `<img>`. `download_url` is a short-lived S3 GET for fetch/zip/PDF.
+ *       `GET /job-cards/{id}` `media` stays intake-only.
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: jobCardId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Photographs in display order
+ *       404:
+ *         description: No such card, or it is invisible to the caller
+ */
+jobCardsRouter.get(
+  "/job-cards/:jobCardId/photographs",
+  async (req: Request<{ jobCardId: string }>, res: Response) => {
+    const id = assertUuid(req.params.jobCardId, "jobCardId");
+    res.json(await jobCardsService.listPhotographsForJobCard(id, actorId(req)));
+  },
+);
+
+/**
+ * @openapi
  * /job-cards/{jobCardId}:
  *   patch:
  *     tags: [Job Cards]

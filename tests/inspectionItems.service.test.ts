@@ -70,6 +70,48 @@ test("creating one item returns one DTO carrying its codes", async () => {
   assert.equal(typeof items[0].created_at, "string");
 });
 
+test("listed items include catalog names for the locating chain", async () => {
+  const { equipmentTypeId, jobCardId, actorId } = await context();
+  const componentId = await seedComponent();
+  const mainViewId = await seedMainView(equipmentTypeId);
+  const subviewId = await seedSubview(mainViewId, componentId);
+
+  await pool.query("UPDATE components SET component_code = $2, component_description = $3 WHERE id = $1", [
+    componentId,
+    "C-REAR",
+    "Rear bumper",
+  ]);
+  await pool.query("UPDATE main_views SET name = $2 WHERE id = $1", [mainViewId, "Rear"]);
+  await pool.query("UPDATE subviews SET name = $2 WHERE id = $1", [subviewId, "Bumper"]);
+
+  await service.createInspectionItems(
+    jobCardId,
+    [
+      {
+        main_view_id: mainViewId,
+        subview_id: subviewId,
+        component_id: componentId,
+        notes: "Needs replacement",
+      },
+    ],
+    actorId,
+  );
+
+  const [named] = await service.listInspectionItems(jobCardId);
+  assert.equal(named.main_view_name, "Rear");
+  assert.equal(named.subview_name, "Bumper");
+  assert.equal(named.component_code, "C-REAR");
+  assert.equal(named.component_description, "Rear bumper");
+
+  const { jobCardId: emptyCardId, actorId: emptyActor } = await context();
+  await service.createInspectionItems(emptyCardId, [{ notes: "unlocated" }], emptyActor);
+  const [unlocated] = await service.listInspectionItems(emptyCardId);
+  assert.equal(unlocated.main_view_name, null);
+  assert.equal(unlocated.subview_name, null);
+  assert.equal(unlocated.component_code, null);
+  assert.equal(unlocated.component_description, null);
+});
+
 test("creating an array returns the DTOs in the order sent", async () => {
   const { jobCardId, actorId } = await context();
 

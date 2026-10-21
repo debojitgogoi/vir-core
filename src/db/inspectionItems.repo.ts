@@ -31,6 +31,10 @@ export interface InspectionItemRow {
   created_by: string | null;
   created_at: Date;
   updated_at: Date;
+  main_view_name: string | null;
+  subview_name: string | null;
+  component_code: string | null;
+  component_description: string | null;
 }
 
 /** The columns a client may set, in the order the insert lists them. */
@@ -74,7 +78,11 @@ export const PATCHABLE_ITEM_COLUMNS = [
 const SELECT_ITEM = `
   SELECT i.*,
          COALESCE(d.ids, ARRAY[]::uuid[]) AS damage_code_ids,
-         COALESCE(r.ids, ARRAY[]::uuid[]) AS repair_code_ids
+         COALESCE(r.ids, ARRAY[]::uuid[]) AS repair_code_ids,
+         mv.name AS main_view_name,
+         sv.name AS subview_name,
+         c.component_code,
+         c.component_description
     FROM inspection_items i
     LEFT JOIN LATERAL (
       SELECT array_agg(damage_code_id ORDER BY created_at, id) AS ids
@@ -84,6 +92,9 @@ const SELECT_ITEM = `
       SELECT array_agg(repair_code_id ORDER BY created_at, id) AS ids
         FROM inspection_item_repairs WHERE inspection_item_id = i.id
     ) r ON true
+    LEFT JOIN main_views mv ON mv.id = i.main_view_id
+    LEFT JOIN subviews sv ON sv.id = i.subview_id
+    LEFT JOIN components c ON c.id = i.component_id
 `;
 
 async function insertJunctions(
@@ -377,6 +388,42 @@ export async function listInspectionItemMedia(itemId: string): Promise<ItemMedia
       WHERE l.inspection_item_id = $1
       ORDER BY l.display_order, l.created_at, l.id`,
     [itemId],
+  );
+  return rows.map((raw) => ({ ...raw, size_bytes: Number(raw.size_bytes) }));
+}
+
+export interface JobCardItemPhotographRaw extends ItemMediaRaw {
+  item_id: string;
+  main_view_name: string | null;
+  subview_name: string | null;
+  component_code: string | null;
+  component_description: string | null;
+}
+
+export type JobCardItemPhotographRow = Omit<JobCardItemPhotographRaw, "size_bytes"> & {
+  size_bytes: number;
+};
+
+/** Every line photograph on a card, in item-list order then line display_order. */
+export async function listInspectionItemMediaForJobCard(
+  jobCardId: string,
+): Promise<JobCardItemPhotographRow[]> {
+  const { rows } = await pool.query<JobCardItemPhotographRaw>(
+    `SELECT a.*, l.display_order, l.created_at AS attached_at,
+            i.id AS item_id,
+            mv.name AS main_view_name,
+            sv.name AS subview_name,
+            c.component_code,
+            c.component_description
+       FROM inspection_items i
+       JOIN inspection_item_media l ON l.inspection_item_id = i.id
+       JOIN media_assets a ON a.id = l.media_asset_id
+       LEFT JOIN main_views mv ON mv.id = i.main_view_id
+       LEFT JOIN subviews sv ON sv.id = i.subview_id
+       LEFT JOIN components c ON c.id = i.component_id
+      WHERE i.job_card_id = $1
+      ORDER BY i.display_order, i.created_at, i.id, l.display_order, l.created_at, l.id`,
+    [jobCardId],
   );
   return rows.map((raw) => ({ ...raw, size_bytes: Number(raw.size_bytes) }));
 }
