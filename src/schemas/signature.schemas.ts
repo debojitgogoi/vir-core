@@ -46,3 +46,11 @@ export const recordSignatureSchema = z
   .strict();
 
 export type RecordSignatureInput = z.infer<typeof recordSignatureSchema>;
+
+export const attachSignatureImageSchema = z
+  .object({
+    media_id: z.string().uuid(),
+  })
+  .strict();
+
+export type AttachSignatureImageInput = z.infer<typeof attachSignatureImageSchema>;

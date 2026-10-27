@@ -329,6 +329,11 @@ export interface SignatureDto {
   device_id: string | null;
   created_by: string | null;
   created_at: string;
+  /** Relative token path for <img>; omitted when this receipt has no ink. */
+  image_url?: string;
+  expires_at?: string;
+  /** Presigned S3 GET when bytes live in S3. */
+  download_url?: string;
 }
 
 /**
@@ -360,6 +365,9 @@ export type SignatureVerification =
       signer_role: SignerRole;
       key_version: number;
       payload_version: number;
+      image_url?: string;
+      expires_at?: string;
+      download_url?: string;
     }
   | { valid: false; reason: SignatureInvalidReason };
 

@@ -1,5 +1,7 @@
 import * as repo from "../db/signatures.repo";
 import * as jobCardsRepo from "../db/jobCards.repo";
+import * as mediaRepo from "../db/media.repo";
+import { env } from "../config/env";
 import { AppError, ERROR_CODES } from "../middleware/errors";
 import {
   RecordSignatureInput,
@@ -7,10 +9,15 @@ import {
   SIGNED_AT_MAX_SKEW_MS,
 } from "../schemas/signature.schemas";
 import { toJobCardDto } from "./jobCards.service";
-import { JobCardDto, SignatureDto, SignatureVerification } from "../types";
+import type { MediaActor } from "./media.service";
+import { JobCardDto, MEDIA_CONTENT_TYPES, SignatureDto, SignatureVerification } from "../types";
 import * as receipt from "../utils/signatureReceipt";
+import { signMediaToken } from "../utils/assetToken";
+import * as mediaStorage from "../storage/mediaStorage";
 
-function toDto(row: repo.SignatureRow): SignatureDto {
+const pgCode = (err: unknown): string | undefined => (err as { code?: string }).code;
+
+function toDtoBase(row: repo.SignatureRow): SignatureDto {
   return {
     id: row.id,
     job_card_id: row.job_card_id,
@@ -27,6 +34,29 @@ function toDto(row: repo.SignatureRow): SignatureDto {
     // here, so a client has no use for either, and publishing the nonce would
     // give away one of the six inputs the HMAC binds.
   };
+}
+
+async function imageUrls(
+  mediaId: string | null,
+  actorId: string | undefined,
+): Promise<Pick<SignatureDto, "image_url" | "expires_at" | "download_url">> {
+  if (!mediaId || !actorId) return {};
+  const asset = await mediaRepo.findMediaAssetById(mediaId);
+  if (!asset || asset.status !== "READY" || !asset.storage_key) return {};
+
+  const signed = signMediaToken(asset.id, actorId);
+  const download = await mediaStorage.resolveDownload(asset.storage_key, {
+    ttlSeconds: env.mediaUrlTtlSeconds,
+  });
+  return {
+    image_url: `/assets/media/${signed.token}`,
+    expires_at: signed.expiresAt,
+    ...(download.kind === "url" ? { download_url: download.url } : {}),
+  };
+}
+
+async function toDto(row: repo.SignatureRow, actorId?: string): Promise<SignatureDto> {
+  return { ...toDtoBase(row), ...(await imageUrls(row.media_id, actorId)) };
 }
 
 /**
@@ -101,7 +131,50 @@ export async function recordSignature(
     createdBy: actorId,
   });
 
-  return toDto(row);
+  return toDtoBase(row);
+}
+
+export async function attachSignatureImage(
+  jobCardId: string,
+  mediaId: string,
+  actor: MediaActor,
+): Promise<SignatureDto> {
+  const latest = await repo.findLatestSignature(jobCardId);
+  if (!latest) throw new AppError(404, "No signature has been recorded for this job card");
+  if (latest.media_id) {
+    throw new AppError(409, "This receipt already has a signature image");
+  }
+
+  const asset = await mediaRepo.findMediaAssetById(mediaId);
+  if (!asset || asset.depot_id !== actor.depotId) {
+    throw new AppError(404, "Media asset not found");
+  }
+  if (asset.status !== "READY") {
+    throw new AppError(
+      409,
+      "This media has no content yet and cannot be attached",
+      undefined,
+      ERROR_CODES.MEDIA_NOT_READY,
+    );
+  }
+  if (!(MEDIA_CONTENT_TYPES as readonly string[]).includes(asset.content_type)) {
+    throw new AppError(400, "Signature image must be an image file");
+  }
+
+  let row: repo.SignatureRow | null;
+  try {
+    row = await repo.setLatestSignatureMedia(jobCardId, mediaId);
+  } catch (err) {
+    if (pgCode(err) === "23505") {
+      throw new AppError(409, "This image is already attached to a signature");
+    }
+    throw err;
+  }
+  if (!row) {
+    throw new AppError(409, "This receipt already has a signature image");
+  }
+
+  return toDto(row, actor.id);
 }
 
 /**
@@ -112,8 +185,14 @@ export async function recordSignature(
  * to re-sign. An HMAC mismatch while the payload still matches means the
  * stored row itself was edited, which is not ordinary at all and where
  * "re-sign the card" would be exactly the wrong advice.
+ *
+ * `actorId` is optional: submission only needs valid/reason. When present and
+ * the receipt has ink, the response includes image URLs.
  */
-export async function verifySignature(jobCardId: string): Promise<SignatureVerification> {
+export async function verifySignature(
+  jobCardId: string,
+  actorId?: string,
+): Promise<SignatureVerification> {
   const card = await cardForSigning(jobCardId);
 
   const row = await repo.findLatestSignature(jobCardId);
@@ -159,12 +238,17 @@ export async function verifySignature(jobCardId: string): Promise<SignatureVerif
     signer_role: row.signer_role,
     key_version: row.key_version,
     payload_version: row.payload_version,
+    ...(await imageUrls(row.media_id, actorId)),
   };
 }
 
-export async function listSignatureHistory(jobCardId: string): Promise<SignatureDto[]> {
+export async function listSignatureHistory(
+  jobCardId: string,
+  actorId?: string,
+): Promise<SignatureDto[]> {
   // Asserts the card exists first, so an unknown id is a 404 rather than an
   // empty list that reads as "this card has never been signed".
   await cardForSigning(jobCardId);
-  return (await repo.listSignatures(jobCardId)).map(toDto);
+  const rows = await repo.listSignatures(jobCardId);
+  return Promise.all(rows.map((row) => toDto(row, actorId)));
 }

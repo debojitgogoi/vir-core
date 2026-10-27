@@ -174,10 +174,10 @@ export interface OrphanedMediaRow {
 /**
  * Media nothing points at any more.
  *
- * **Both link tables must appear in this query.** Omitting either one would
- * report live photographs as orphans and delete them — job_card_media covers
- * intake attachments, inspection_item_media covers line-item photographs, and
- * an asset referenced by either is in use.
+ * **Every owner must appear in this query.** Omitting one would report live
+ * photographs as orphans and delete them — job_card_media covers intake,
+ * inspection_item_media covers line-item shots, and job_card_signatures.media_id
+ * covers signature ink.
  *
  * @param pendingBefore PENDING rows older than this are treated as uploads that
  * never arrived. Anything newer may still be in flight.
@@ -191,7 +191,9 @@ export async function findOrphanedMedia(pendingBefore: Date): Promise<OrphanedMe
              AND NOT EXISTS (
                SELECT 1 FROM job_card_media l WHERE l.media_asset_id = a.id)
              AND NOT EXISTS (
-               SELECT 1 FROM inspection_item_media l WHERE l.media_asset_id = a.id))
+               SELECT 1 FROM inspection_item_media l WHERE l.media_asset_id = a.id)
+             AND NOT EXISTS (
+               SELECT 1 FROM job_card_signatures s WHERE s.media_id = a.id))
       ORDER BY a.created_at, a.id`,
     [pendingBefore],
   );

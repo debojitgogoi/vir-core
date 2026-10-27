@@ -17,6 +17,7 @@ export interface SignatureRow {
   device_id: string | null;
   created_by: string | null;
   created_at: Date;
+  media_id: string | null;
 }
 
 export interface InsertSignatureInput {
@@ -35,7 +36,7 @@ export interface InsertSignatureInput {
 
 const COLUMNS = `id, job_card_id, signer_name, signer_role, signed_at, nonce,
                  payload_hash, receipt_hmac, key_version, payload_version,
-                 device_id, created_by, created_at`;
+                 device_id, created_by, created_at, media_id`;
 
 /** Append-only: there is no update and no delete on this table, by design. */
 export async function insertSignature(input: InsertSignatureInput): Promise<SignatureRow> {
@@ -96,4 +97,28 @@ export async function listSignatures(jobCardId: string): Promise<SignatureRow[]>
     [jobCardId],
   );
   return rows;
+}
+
+/**
+ * Links ink to the latest receipt only when it has none. Returns null when
+ * there is no receipt, or when that receipt already has an image.
+ */
+export async function setLatestSignatureMedia(
+  jobCardId: string,
+  mediaId: string,
+): Promise<SignatureRow | null> {
+  const { rows } = await pool.query<SignatureRow>(
+    `UPDATE job_card_signatures
+        SET media_id = $2
+      WHERE id = (
+              SELECT id FROM job_card_signatures
+               WHERE job_card_id = $1
+               ORDER BY created_at DESC
+               LIMIT 1
+            )
+        AND media_id IS NULL
+      RETURNING ${COLUMNS}`,
+    [jobCardId, mediaId],
+  );
+  return rows[0] ?? null;
 }

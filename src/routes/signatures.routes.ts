@@ -2,8 +2,9 @@ import { Request, Response, Router } from "express";
 import { requireAuth } from "../middleware/auth";
 import { requireDepotAccess, requireUnlockedJobCard } from "../middleware/depotAccess";
 import { AppError } from "../middleware/errors";
-import { recordSignatureSchema } from "../schemas/signature.schemas";
+import { attachSignatureImageSchema, recordSignatureSchema } from "../schemas/signature.schemas";
 import * as signaturesService from "../services/signatures.service";
+import type { MediaActor } from "../services/media.service";
 import { assertUuid } from "../utils/uuid";
 import { parseOrThrow } from "../utils/zodError";
 
@@ -21,6 +22,12 @@ function actorId(req: Request): string {
   return req.user.id;
 }
 
+function mediaActor(req: Request): MediaActor {
+  if (!req.user) throw new AppError(500, "Route reached without an authenticated user");
+  if (!req.depot) throw new AppError(500, "Route reached without a resolved depot");
+  return { id: req.user.id, depotId: req.depot.id };
+}
+
 /**
  * @openapi
  * /job-cards/{jobCardId}/signature:
@@ -29,8 +36,8 @@ function actorId(req: Request): string {
  *     summary: Record a customer's acknowledgment
  *     description: >
  *       Records an acknowledgment of the card's current intake content as an
- *       HMAC receipt. No signature image, vector strokes, or biometric data is
- *       stored. Re-signing after an edit appends a new receipt; the earlier
+ *       HMAC receipt. Ink is attached afterwards via POST .../signature/image.
+ *       Re-signing after an edit appends a new receipt; the earlier
  *       ones stay and are readable through the history route. `signed_at` may
  *       be backdated up to seven days, for a device that captured the moment
  *       offline, and may not be in the future.
@@ -59,6 +66,59 @@ signaturesRouter.post(
     const jobCardId = assertUuid(req.params.jobCardId, "jobCardId");
     const input = parseOrThrow(recordSignatureSchema, req.body);
     res.status(201).json(await signaturesService.recordSignature(jobCardId, input, actorId(req)));
+  },
+);
+
+/**
+ * @openapi
+ * /job-cards/{jobCardId}/signature/image:
+ *   post:
+ *     tags: [Signatures]
+ *     summary: Attach a photograph of the customer's ink to the latest receipt
+ *     description: >
+ *       The asset must already be READY (register + PUT through the media
+ *       routes). It is stored on the latest receipt only; a second attach on
+ *       the same receipt is 409. Re-signing creates a new receipt that can
+ *       take its own image. The file is not a job_card_media kind, so it does
+ *       not appear in intake or GET .../photographs. When present, reads
+ *       return `image_url` (relative token path) and `download_url` (presigned
+ *       S3 GET when the bucket is configured).
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: jobCardId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [media_id]
+ *             properties:
+ *               media_id: { type: string, format: uuid }
+ *     responses:
+ *       201:
+ *         description: The receipt, now including image_url when ink is linked
+ *       400:
+ *         description: VALIDATION_ERROR — bad body
+ *       403:
+ *         description: DEPOT_FORBIDDEN, or DEPOT_DISABLED
+ *       404:
+ *         description: No receipt, no such job card, or media not found in this depot
+ *       409:
+ *         description: JOB_CARD_LOCKED, MEDIA_NOT_READY, already attached, or media already used
+ */
+signaturesRouter.post(
+  "/job-cards/:jobCardId/signature/image",
+  requireUnlockedJobCard,
+  async (req: Request<{ jobCardId: string }>, res: Response) => {
+    const jobCardId = assertUuid(req.params.jobCardId, "jobCardId");
+    const input = parseOrThrow(attachSignatureImageSchema, req.body);
+    res
+      .status(201)
+      .json(await signaturesService.attachSignatureImage(jobCardId, input.media_id, mediaActor(req)));
   },
 );
 
@@ -95,7 +155,7 @@ signaturesRouter.get(
   "/job-cards/:jobCardId/signature/verify",
   async (req: Request<{ jobCardId: string }>, res: Response) => {
     const jobCardId = assertUuid(req.params.jobCardId, "jobCardId");
-    res.json(await signaturesService.verifySignature(jobCardId));
+    res.json(await signaturesService.verifySignature(jobCardId, actorId(req)));
   },
 );
 
@@ -109,7 +169,8 @@ signaturesRouter.get(
  *       Re-signing appends rather than replaces, so a card edited after signing
  *       carries more than one receipt. This route is what makes that history
  *       visible — which is what a dispute about an acknowledgment actually
- *       needs. `receipt_hmac` and `nonce` are never returned.
+ *       needs. `receipt_hmac` and `nonce` are never returned. Receipts with
+ *       ink include `image_url` and, when S3 is on, `download_url`.
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - in: path
@@ -128,6 +189,6 @@ signaturesRouter.get(
   "/job-cards/:jobCardId/signature/history",
   async (req: Request<{ jobCardId: string }>, res: Response) => {
     const jobCardId = assertUuid(req.params.jobCardId, "jobCardId");
-    res.json(await signaturesService.listSignatureHistory(jobCardId));
+    res.json(await signaturesService.listSignatureHistory(jobCardId, actorId(req)));
   },
 );

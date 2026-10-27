@@ -170,6 +170,7 @@ jobCardsRouter.get(
  *           The job card, plus `media` (each entry carrying a short-lived
  *           signed URL) and `signature`, the same verification result
  *           `/signature/verify` returns — so one request renders the whole card.
+ *           A valid signature that has ink also carries `image_url`.
  *       400:
  *         description: VALIDATION_ERROR — the id is not a UUID
  *       403:
@@ -193,7 +194,7 @@ jobCardsRouter.get(
       // running it on every read costs less than making the client ask
       // separately -- and it means a client can never render a card while
       // believing a stale "signed" flag.
-      signaturesService.verifySignature(id),
+      signaturesService.verifySignature(id, req.user.id),
     ]);
     res.json({ ...card, media, signature });
   },

@@ -51,7 +51,7 @@ function insert(jobCardId: string, overrides: Record<string, unknown> = {}) {
   );
 }
 
-test("a signature row stores no image, strokes, or biometric column", async () => {
+test("a signature row stores no strokes or biometric column; ink is an optional media_id", async () => {
   const { rows } = await pool.query<{ column_name: string }>(
     `SELECT column_name FROM information_schema.columns
      WHERE table_name = 'job_card_signatures'`,
@@ -65,6 +65,7 @@ test("a signature row stores no image, strokes, or biometric column", async () =
     "id",
     "job_card_id",
     "key_version",
+    "media_id",
     "nonce",
     "payload_hash",
     "payload_version",
